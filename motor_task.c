@@ -64,7 +64,7 @@
 
 #define 	MAX_PCT 				100.0
 #define 	MIN_PCT 				10.0
-#define  	MAX_RPM 				3000.0
+#define  	MAX_RPM 				5500.0
 #define  	MIN_RPM 				1000.0
 
 #define 	SLOPE 					((MAX_RPM-MIN_RPM)/(MAX_PCT-MIN_PCT))

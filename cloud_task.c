@@ -213,7 +213,7 @@ void task_cloud(void* param)
     }
     else
     {
-    	printf("Connected to MQTT\n");
+    	printf("Connected to MQTT, Device: %s Topic: %s\n", MQTT_CLIENT_IDENTIFIER, MQTT_TOPIC);
     }
 
     /* Subscribe to motor speed MQTT messages */
@@ -240,7 +240,9 @@ void task_cloud(void* param)
 
 void mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, void *user_data )
 {
-    cy_mqtt_publish_info_t *received_msg;
+	printf("Debug: MQTT callback\n");
+
+	cy_mqtt_publish_info_t *received_msg;
     (void)user_data;
     switch( event.type )
     {
