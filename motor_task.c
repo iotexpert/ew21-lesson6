@@ -1,7 +1,7 @@
 /*******************************************************************************
-* File Name: capsense_task.c
+* File Name: motor_task.c
 *
-* Description: This file contains the task that handles the 3D magnetic joystick.
+* Description: This file contains the task that handles the motor.
 *
 ********************************************************************************
 * (c) 2019-2020, Cypress Semiconductor Corporation. All rights reserved.
@@ -51,8 +51,8 @@
 #include <stdlib.h>
 #include <math.h>
 
-#include "capsense_task.h"
-#include "global.h"
+#include "motor_task.h"
+#include "cloud_task.h"
 
 #include "ew_tle9879_system.h"
 
@@ -83,7 +83,7 @@ ew_tle9879_sys_t tle9879_sys;
 * Function Name: task_joystick
 ********************************************************************************
 * Summary:
-*  Task that initializes the CapSense block and processes the touch input.
+*  Task that initializes the morot and processes speed input.
 *
 * Parameters:
 *  void *param : Task parameter defined during task creation (unused)
@@ -125,7 +125,7 @@ void task_motor(void* param)
 		if(rtos_api_result == pdTRUE)
 		{
 			/* Scale the percentage to a desired motor speed */
-			if(motorPercent < 10)
+			if(motorPercent < 10) /* Any value less than 10% will result in stopping the motor */
 			{
 				motorSpeedDesired = 0;
 			}
@@ -141,7 +141,7 @@ void task_motor(void* param)
 		 * The rate of change is limited to keep the motor operation smooth */
 		if (motorSpeedDesired > motorSpeed + RPM_CHANGE_MAX) /* Speed needs to go up */
 		{
-			if (motorSpeed < MIN_RPM) /* Jump to minimum speed right away */
+			if (motorSpeed < MIN_RPM) /* Jump up to the minimum speed right away */
 			{
 				motorSpeed = MIN_RPM;
 			}

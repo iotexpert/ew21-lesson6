@@ -44,6 +44,7 @@
 #include "cycfg.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 #include "cy_secure_sockets.h"
 #include "cy_wcm.h"
 #include <stdlib.h>
@@ -51,7 +52,6 @@
 
 #include "cy_mqtt_api.h"
 
-#include "global.h"
 #include "cloud_task.h"
 #include "wifi_config.h"
 #include "mqtt_client_config.h"
@@ -233,15 +233,13 @@ void task_cloud(void* param)
     for(;;)
     {
     	/* Nothing to do here */
-    	vTaskDelay(100);
+    	vTaskSuspend(NULL);
     }
 }
 
 
 void mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, void *user_data )
 {
-	printf("Debug: MQTT callback\n");
-
 	cy_mqtt_publish_info_t *received_msg;
     (void)user_data;
     switch( event.type )
@@ -256,7 +254,7 @@ void mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, void *user_dat
                 printf( "\nCY_MQTT_DISCONN_REASON_NETWORK_DISCONNECTION .....\n" );
             }
             break;
-        case CY_MQTT_EVENT_TYPE_PUBLISH_RECEIVE :
+        case CY_MQTT_EVENT_TYPE_PUBLISH_RECEIVE : /* This event is called when a message to a subscription is recieved */
             received_msg = &(event.data.pub_msg.received_message);
 
 			if(received_msg->topic_len == MQTT_TOPIC_LENGTH) /* Received message matches length of motor speed topic */
@@ -276,11 +274,12 @@ void mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, void *user_dat
     }
 }
 
+/* This is the callback from the cy_JSON_parser function. It is called whenever
+ * the parser finds a JSON object. */
 cy_rslt_t json_cb(cy_JSON_object_t *json_object, void *arg)
 {
     BaseType_t xYieldRequired;
 	uint8_t motorSpeed;
-
 
 	if(json_object->value_type == JSON_NUMBER_TYPE)
 	{
