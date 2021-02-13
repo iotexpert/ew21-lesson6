@@ -65,6 +65,8 @@
 /* The largest MQTT message we will send is {"motor":100} which is 14 characters including the null termination */
 #define MQTT_MAX_MESSAGE_SIZE 15
 
+#define KEY_NAME "motor"
+
 /*******************************************************************************
 * Function Prototypes
 *******************************************************************************/
@@ -281,18 +283,21 @@ cy_rslt_t json_cb(cy_JSON_object_t *json_object, void *arg)
     BaseType_t xYieldRequired;
 	uint8_t motorSpeed;
 
-	if(json_object->value_type == JSON_NUMBER_TYPE)
+	if(memcmp(json_object->object_string, KEY_NAME, json_object->object_string_length) == 0)
 	{
-		/* Add null termination to the value and then convert to a number */
-		char resultString[json_object->value_length + 1];
-		memcpy(resultString, json_object->value, json_object->value_length);
-		resultString[json_object->value_length] = 0;
-		motorSpeed = (uint8_t) atoi(resultString);
-		printf("Received speed value from cloud: %d\n", motorSpeed);
+		if(json_object->value_type == JSON_NUMBER_TYPE)
+		{
+			/* Add null termination to the value and then convert to a number */
+			char resultString[json_object->value_length + 1];
+			memcpy(resultString, json_object->value, json_object->value_length);
+			resultString[json_object->value_length] = 0;
+			motorSpeed = (uint8_t) atoi(resultString);
+			printf("Received speed value from cloud: %d\n", motorSpeed);
 
-		/* Push value to the motor queue */
-		xQueueOverwriteFromISR(motor_value_q, &motorSpeed, &xYieldRequired);
-		portYIELD_FROM_ISR(xYieldRequired);
+			/* Push value to the motor queue */
+			xQueueOverwriteFromISR(motor_value_q, &motorSpeed, &xYieldRequired);
+			portYIELD_FROM_ISR(xYieldRequired);
+		}
 	}
 	return 0;
 }
