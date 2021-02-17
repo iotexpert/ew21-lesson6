@@ -54,7 +54,8 @@
 #include "motor_task.h"
 #include "cloud_task.h"
 
-#include "ew_tle9879_system.h"
+#include "tle9879_system.h"
+#include "ws2812.h"
 
 /*******************************************************************************
 * Global constants
@@ -70,6 +71,8 @@
 #define 	SLOPE 					((MAX_RPM-MIN_RPM)/(MAX_PCT-MIN_PCT))
 #define 	INTERCEPT 				(MAX_RPM - (SLOPE * MAX_PCT))
 
+#define		NUM_LEDS				(61)
+
 /*******************************************************************************
 * Function Prototypes
 *******************************************************************************/
@@ -77,7 +80,7 @@
 /******************************************************************************
 * Global variables
 ******************************************************************************/
-ew_tle9879_sys_t tle9879_sys;
+tle9879_sys_t tle9879_sys;
 
 /*******************************************************************************
 * Function Name: task_joystick
@@ -99,11 +102,25 @@ void task_motor(void* param)
     uint8_t numberOfBoards = 1;
 	BaseType_t rtos_api_result;
 
+	/* LED color array - 10 different sets of colors each with RGB values */
+	uint8_t ledColors[7][3] = {
+			{ 0,  0,  0},	// Off
+			{20,  0, 30},	// Violet
+			{ 0,  0, 50},	// Blue
+			{ 0, 50,  0},	// Green
+			{30, 20,  0},	// Yellow
+			{42,  8,  0},	// Orange
+			{50,  0,  0},	// Red
+	};
+
+	uint8_t ledColorRow = 0;
+	uint8_t ledColorRowPrev = 0;
+
     /* Remove warning for unused parameter */
     (void)param;
 
     /* Initialize and configure the motor driver */
-    ew_tle9879sys_init(&tle9879_sys,
+    tle9879sys_init(&tle9879_sys,
     					CYBSP_D11,
 						CYBSP_D12,
 						CYBSP_D13,
@@ -113,7 +130,10 @@ void task_motor(void* param)
 						CYBSP_D6,
 						CYBSP_D7,
 						&numberOfBoards);
-    ew_tle9879sys_setMode(&tle9879_sys, FOC, 1, false);
+    tle9879sys_setMode(&tle9879_sys, FOC, 1, false);
+
+    /* Initialize LED strips */
+    ws2812_init(NUM_LEDS, P10_0, P10_1, P10_2);
 
     /* Repeatedly running part of the task */
     for(;;)
@@ -179,27 +199,39 @@ void task_motor(void* param)
 			{
 				if(motorRunning == true)
 					{
-						ew_tle9879sys_setMotorMode(&tle9879_sys, STOP_MOTOR, 1);
+						tle9879sys_setMotorMode(&tle9879_sys, STOP_MOTOR, 1);
 						printf("Motor Stopped\n");
 						motorRunning = false;
+
+						/* Turn off LEDs */
+						ws2812_setMultiRGB(0, NUM_LEDS-1, 0, 0, 0);
+						ws2812_update();
+						ledColorRowPrev = 0;
 					}
 			}
 			else	/* Set new speed and start motor if it isn't already running */
 			{
-				ew_tle9879sys_setMotorSpeed(&tle9879_sys, motorSpeed, 1);
+				tle9879sys_setMotorSpeed(&tle9879_sys, motorSpeed, 1);
 				if(motorRunning == false)
 				{
-					ew_tle9879sys_setMotorMode(&tle9879_sys, START_MOTOR, 1);
+					tle9879sys_setMotorMode(&tle9879_sys, START_MOTOR, 1);
 					printf("Motor Started\n");
 					motorRunning = true;
+				}
+
+				/* Calculate LED color and update if it has changed */
+				ledColorRow = 1 + (uint8_t)((( (uint16_t)motorSpeed - (uint16_t)MIN_RPM ) * 5) / ((uint16_t)MAX_RPM - (uint16_t)MIN_RPM)); /* Determine row to use */
+				if(ledColorRowPrev != ledColorRow)
+				{
+					ws2812_setMultiRGB(0, NUM_LEDS-1, ledColors[ledColorRow][0], ledColors[ledColorRow][1], ledColors[ledColorRow][2]);
+					ws2812_update();
+					ledColorRowPrev = ledColorRow;
 				}
 			}
 		}
 
 		vTaskDelay(RPM_CHANGE_INTERVAL); /* Max rate to change motor speed */
-
     }
 }
-
 /* END OF FILE [] */
 
