@@ -45,8 +45,7 @@
 #include "cycfg_capsense.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "queue.h"
-#include "timers.h"
+#include "semphr.h"
 #include <stdio.h>
 
 #include "capsense_task.h"
@@ -59,41 +58,27 @@
 
 #define CAPSENSE_SCAN_INTERVAL_MS       (20)   /* in milliseconds*/
 
-#define NUM_ELEMENTS                    (1)
 
 /*******************************************************************************
 * Function Prototypes
 *******************************************************************************/
-static uint32_t capsense_init(void);
+
+static void capsense_init(void);
 static void process_touch(void);
 static void capsense_isr(void);
 static void capsense_end_of_scan_callback(cy_stc_active_scan_sns_t* active_scan_sns_ptr);
-static void capsense_timer_callback(TimerHandle_t xTimer);
 
-/******************************************************************************
-* Global variables
-******************************************************************************/
-QueueHandle_t capsense_command_q;
-TimerHandle_t scan_timer_handle;
-cy_stc_scb_ezi2c_context_t ezi2c_context;
-cyhal_ezi2c_t sEzI2C;
-cyhal_ezi2c_slave_cfg_t sEzI2C_sub_cfg;
-cyhal_ezi2c_cfg_t sEzI2C_cfg;
 
-typedef enum
-{
-    CAPSENSE_SCAN,
-    CAPSENSE_PROCESS
-} capsense_command_t;
+static QueueHandle_t capsense_done;
 
 /* SysPm callback params */
-cy_stc_syspm_callback_params_t callback_params =
+static cy_stc_syspm_callback_params_t callback_params =
 {
     .base       = CYBSP_CSD_HW,
     .context    = &cy_capsense_context
 };
 
-cy_stc_syspm_callback_t capsense_deep_sleep_cb =
+static cy_stc_syspm_callback_t capsense_deep_sleep_cb =
 {
     Cy_CapSense_DeepSleepCallback,
     CY_SYSPM_DEEPSLEEP,
@@ -114,82 +99,25 @@ cy_stc_syspm_callback_t capsense_deep_sleep_cb =
 *  void *param : Task parameter defined during task creation (unused)
 *
 *******************************************************************************/
-void task_capsense(void* param)
+void capsense_task(void* param)
 {
-    /* See the Cypress CapSense Middleware Library link in the Quick Panel
-     * Documentation for details on the CapSense API */
-
-	BaseType_t rtos_api_result;
-    cy_status status;
-    capsense_command_t capsense_cmd;
-
-    /* Remove warning for unused parameter */
     (void)param;
 
-    /* Create queue to handle commands to alternate between scanning and processing of results. */
-    capsense_command_q  = xQueueCreate( NUM_ELEMENTS, sizeof(capsense_command_t));
-
-    /* Initialize timer for periodic CapSense scan */
-    scan_timer_handle = xTimerCreate ("Scan Timer", CAPSENSE_SCAN_INTERVAL_MS,
-                                      pdTRUE, NULL, capsense_timer_callback);
+    capsense_done = xQueueCreateCountingSemaphore(1,0);
 
     /* Initialize CapSense block */
-    status = capsense_init();
-    if(CY_RET_SUCCESS != status)
-    {
-    	printf("CapSense Initialization Failed!\n");
-    	CY_ASSERT(0u);
-    }
-    else
-    {
-    	printf("CapSense Initialized\n");
-    }
+    capsense_init();
 
-    /* Start the timer */
-    xTimerStart(scan_timer_handle, 0u);
+    Cy_CapSense_ScanAllWidgets(&cy_capsense_context);
 
-    /* Repeatedly running part of the task */
     for(;;)
     {
-        /* Block until a CapSense command has been received over queue */
-        rtos_api_result = xQueueReceive(capsense_command_q, &capsense_cmd, portMAX_DELAY);
+        xSemaphoreTake(capsense_done,portMAX_DELAY);
 
-        /* Command has been received from capsense_cmd */
-        if(rtos_api_result == pdTRUE)
-        {
-            /* Check if CapSense is busy with a previous scan */
-            if(CY_CAPSENSE_NOT_BUSY == Cy_CapSense_IsBusy(&cy_capsense_context))
-            {
-                switch(capsense_cmd)
-                {
-                    case CAPSENSE_SCAN:
-                    { 
-                        /* Start scan */
-                        Cy_CapSense_ScanAllWidgets(&cy_capsense_context);
-                        break;
-                    }
-                    case CAPSENSE_PROCESS:
-                    {
-                        /* Process all widgets */
-                        Cy_CapSense_ProcessAllWidgets(&cy_capsense_context);
-                        process_touch();
-                        break;
-                    }
-                    /* Invalid command */
-                    default:
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-        /* Task has timed out and received no data during an interval of
-         * portMAXDELAY ticks.
-         */
-        else
-        {
-            /* Handle timeout here */
-        }
+        Cy_CapSense_ProcessAllWidgets(&cy_capsense_context);
+        process_touch();
+        Cy_CapSense_ScanAllWidgets(&cy_capsense_context);
+        vTaskDelay(50); // ~20hz update
     }
 }
 
@@ -212,10 +140,11 @@ static void process_touch(void)
     /* Variables used to store previous touch information */
     static uint32_t button0_status_prev = 0;
     static uint32_t button1_status_prev = 0;
-    static uint16_t slider_pos_perv = 0;
+    static uint16_t slider_pos_prev = 0;
 
     /* Get button 0 status */
-    button0_status = Cy_CapSense_IsSensorActive( CY_CAPSENSE_BUTTON0_WDGT_ID, CY_CAPSENSE_BUTTON0_SNS0_ID, &cy_capsense_context);
+    //button0_status = Cy_CapSense_IsSensorActive( CY_CAPSENSE_BUTTON0_WDGT_ID, CY_CAPSENSE_BUTTON0_SNS0_ID, &cy_capsense_context);
+    button0_status = Cy_CapSense_IsWidgetActive(CY_CAPSENSE_BUTTON0_WDGT_ID,&cy_capsense_context);
 
     /* Get button 1 status */
     button1_status = Cy_CapSense_IsSensorActive( CY_CAPSENSE_BUTTON1_WDGT_ID, CY_CAPSENSE_BUTTON1_SNS0_ID, &cy_capsense_context);
@@ -231,6 +160,7 @@ static void process_touch(void)
     if((0u != button0_status) && (0u == button0_status_prev))
     {
         printf("Button 0 pressed\n");
+        cloud_sendMotorSpeed(0);
     }
 
     /* Detect new touch on Button1 */
@@ -240,17 +170,16 @@ static void process_touch(void)
     }
 
     /* Detect new touch on slider */
-    if((0u != slider_touched) && (slider_pos_perv != slider_pos ))
+    if((0u != slider_touched) && (slider_pos_prev != slider_pos ))
     {
         printf("Slider position %d\n",slider_pos);
-        xQueueOverwrite(motor_value_q, (uint8_t*) &slider_pos);
-
+        cloud_sendMotorSpeed(slider_pos);
     }
 
     /* Update previous touch status */
     button0_status_prev = button0_status;
     button1_status_prev = button1_status;
-    slider_pos_perv = slider_pos;
+    slider_pos_prev = slider_pos;
 }
 
 
@@ -262,23 +191,19 @@ static void process_touch(void)
 *  interrupt.
 *
 *******************************************************************************/
-static uint32_t capsense_init(void)
+static void capsense_init(void)
 {
-    uint32_t status = CYRET_SUCCESS;
 
+
+    /*Initialize CapSense Data structures */
+    Cy_CapSense_Init(&cy_capsense_context);
+    
     /* CapSense interrupt configuration parameters */
     static const cy_stc_sysint_t capSense_intr_config =
     {
         .intrSrc = csd_interrupt_IRQn,
         .intrPriority = CAPSENSE_INTERRUPT_PRIORITY,
     };
-
-    /*Initialize CapSense Data structures */
-    status = Cy_CapSense_Init(&cy_capsense_context);
-    if (CYRET_SUCCESS != status)
-    {
-        return status;
-    }
 
     /* Initialize CapSense interrupt */
     Cy_SysInt_Init(&capSense_intr_config, &capsense_isr);
@@ -290,20 +215,10 @@ static uint32_t capsense_init(void)
      * link in the Quick Panel Documentation for information on setting up the SysPm callbacks */
     Cy_SysPm_RegisterCallback(&capsense_deep_sleep_cb);
     /* Register end of scan callback */
-    status = Cy_CapSense_RegisterCallback(CY_CAPSENSE_END_OF_SCAN_E,
+    Cy_CapSense_RegisterCallback(CY_CAPSENSE_END_OF_SCAN_E,
                                               capsense_end_of_scan_callback, &cy_capsense_context);
-    if (CYRET_SUCCESS != status)
-    {
-        return status;
-    }
-    /* Initialize the CapSense firmware modules. */
-    status = Cy_CapSense_Enable(&cy_capsense_context);
-    if (CYRET_SUCCESS != status)
-    {
-        return status;
-    }
     
-    return status;
+    Cy_CapSense_Enable(&cy_capsense_context);
 }
 
 
@@ -323,35 +238,8 @@ static void capsense_end_of_scan_callback(cy_stc_active_scan_sns_t* active_scan_
     BaseType_t xYieldRequired;
 
     (void)active_scan_sns_ptr;
+    xYieldRequired = xSemaphoreGiveFromISR(capsense_done,&xYieldRequired);
 
-    /* Send command to process CapSense data */
-    capsense_command_t commmand = CAPSENSE_PROCESS;
-    xYieldRequired = xQueueSendToBackFromISR(capsense_command_q, &commmand, 0u);
-    portYIELD_FROM_ISR(xYieldRequired);
-}
-
-
-/*******************************************************************************
-* Function Name: capsense_timer_callback
-********************************************************************************
-* Summary:
-*  CapSense timer callback. This function sends a command to start CapSense
-*  scan.
-*
-* Parameters:
-*  TimerHandle_t xTimer (unused)
-*
-*******************************************************************************/
-static void capsense_timer_callback(TimerHandle_t xTimer)
-{
-	Cy_CapSense_Wakeup(&cy_capsense_context);
-    capsense_command_t command = CAPSENSE_SCAN;
-    BaseType_t xYieldRequired;
-
-    (void)xTimer;
-
-    /* Send command to start CapSense scan */
-    xYieldRequired = xQueueSendToBackFromISR(capsense_command_q, &command, 0u);
     portYIELD_FROM_ISR(xYieldRequired);
 }
 
