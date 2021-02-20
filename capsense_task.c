@@ -51,6 +51,8 @@
 #include "capsense_task.h"
 #include "cloud_task.h"
 
+#include "motor_task.h"
+
 /*******************************************************************************
 * Global constants
 *******************************************************************************/
@@ -160,20 +162,22 @@ static void process_touch(void)
     if((0u != button0_status) && (0u == button0_status_prev))
     {
         printf("Button 0 pressed\n");
-        cloud_sendMotorSpeed(0);
+        motor_update(0);
     }
 
     /* Detect new touch on Button1 */
     if((0u != button1_status) && (0u == button1_status_prev))
     {
         printf("Button 1 pressed\n");
+        motor_update(75);
+
     }
 
     /* Detect new touch on slider */
     if((0u != slider_touched) && (slider_pos_prev != slider_pos ))
     {
         printf("Slider position %d\n",slider_pos);
-        cloud_sendMotorSpeed(slider_pos);
+        motor_update(slider_pos);
     }
 
     /* Update previous touch status */

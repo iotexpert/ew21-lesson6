@@ -17,13 +17,38 @@
 
 #include "motor_task.h"
 
-static QueueHandle_t motor_value_q;
+#include "cy_json_parser.h"
+
 static cy_mqtt_t mqtthandle;
 
 static void cloud_connectWifi();
 static void cloud_startMQTT();
 static void cloud_mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, void *user_data);
 
+#define KEY_NAME "motor"
+
+
+/* This is the callback from the cy_JSON_parser function. It is called whenever
+ * the parser finds a JSON object. */
+cy_rslt_t json_cb(cy_JSON_object_t *json_object, void *arg)
+{
+	int motorSpeed;
+
+	if(memcmp(json_object->object_string, KEY_NAME, json_object->object_string_length) == 0)
+	{
+		if(json_object->value_type == JSON_NUMBER_TYPE)
+		{
+			/* Add null termination to the value and then convert to a number */
+			char resultString[json_object->value_length + 1];
+			memcpy(resultString, json_object->value, json_object->value_length);
+			resultString[json_object->value_length] = 0;
+			motorSpeed = (uint8_t) atoi(resultString);
+			printf("Received speed value from cloud: %d\n", motorSpeed);
+			motor_update(motorSpeed);
+		}
+	}
+	return CY_RSLT_SUCCESS;
+}
 
 
 void cloud_subscribeMQTT()
@@ -44,7 +69,7 @@ void cloud_subscribeMQTT()
 	printf("Subscribe Success\n");
 
     /* Register JSON callback function */
-    //cy_JSON_parser_register_callback(json_cb, NULL);
+    cy_JSON_parser_register_callback(json_cb, NULL);
 
 }
 
@@ -63,11 +88,6 @@ void cloud_task(void* param)
 	}
 }
 
-void cloud_sendMotorSpeed(int speed)
-{
-	if(motor_value_q)
-		xQueueSend(motor_value_q,&speed,0);
-}
 
 static void cloud_connectWifi()
 {
@@ -174,7 +194,11 @@ static void cloud_mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, v
             printf( "Incoming Publish Topic Name: %.*s\n", received_msg->topic_len, received_msg->topic );
             printf( "Incoming Publish message Packet Id is %u.\n", event.data.pub_msg.packet_id );
             printf( "Incoming Publish Message : %.*s.\n\n", ( int )received_msg->payload_len, ( const char * )received_msg->payload );
-			motor_update(100);
+			if(memcmp(received_msg->topic, "motor_speed", strlen("motor_speed")) == 0) /* Topic matches the motor speed topic */
+			{
+					cy_JSON_parser(received_msg->payload, received_msg->payload_len);
+			}
+			
             break;
         default :
             printf( "\nUNKNOWN EVENT .....\n" );
