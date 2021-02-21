@@ -99,5 +99,6 @@ void motor_task(void* param)
 
 void motor_update(int speed)
 {
-	xQueueSend(motor_value_q,&speed,0);
+	if(motor_value_q)
+		xQueueSend(motor_value_q,&speed,0);
 }
