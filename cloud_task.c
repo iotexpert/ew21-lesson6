@@ -25,14 +25,16 @@ static void cloud_connectWifi();
 static void cloud_startMQTT();
 static void cloud_mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, void *user_data);
 
-#define CLOUD_WIFI_AP        "Guest"
-#define CLOUD_WIFI_PW        ""
-#define CLOUD_WIFI_SECURITY  CY_WCM_SECURITY_OPEN
-#define CLOUD_WIFI_BAND      CY_WCM_WIFI_BAND_ANY
+#define CLOUD_WIFI_AP        "CYFI_IOT_EXT"
+#define CLOUD_WIFI_PW        "cypresswicedwifi101"
+#define CLOUD_WIFI_SECURITY  CY_WCM_SECURITY_WPA2_MIXED_PSK
+#define CLOUD_WIFI_BAND      CY_WCM_WIFI_BAND_2_4GHZ
 
-#define CLOUD_MQTT_BROKER        "mqtt.eclipseprojects.io"
+//#define CLOUD_MQTT_BROKER        "mqtt.eclipseprojects.io"
+//#define CLOUD_MQTT_BROKER        "test.mosquitto.org"
+#define CLOUD_MQTT_BROKER        "linux.elkhorn-creek.org"
 #define CLOUD_MQTT_CLIENT_PREFIX "arh_drone"
-#define CLOUD_MQTT_TOPIC         "motor_speed"
+#define CLOUD_MQTT_TOPIC         "arh_motor_speed"
 
 #define MOTOR_KEY "motor"
 
@@ -90,7 +92,6 @@ void cloud_task(void* param)
 	cloud_startMQTT();
 	cloud_subscribeMQTT();
 
-
     for(;;)
     {
 		vTaskSuspend(NULL);
@@ -106,6 +107,7 @@ static void cloud_connectWifi()
 		.ap_credentials.SSID = CLOUD_WIFI_AP,
 		.ap_credentials.password = CLOUD_WIFI_PW,
 		.ap_credentials.security = CLOUD_WIFI_SECURITY,
+		.static_ip_settings = 0,
 		.BSSID = {0},
 		.band = CLOUD_WIFI_BAND,
 	};
