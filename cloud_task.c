@@ -1,4 +1,3 @@
-
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -23,66 +22,22 @@ static cy_mqtt_t mqtthandle;
 
 static void cloud_connectWifi();
 static void cloud_startMQTT();
+static void cloud_subscribeMQTT();
 static void cloud_mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, void *user_data);
+static cy_rslt_t json_cb(cy_JSON_object_t *json_object, void *arg);
 
-#define CLOUD_WIFI_AP        "CYFI_IOT_EXT"
-#define CLOUD_WIFI_PW        "cypresswicedwifi101"
+
+#define CLOUD_WIFI_AP        "ew2021"
+#define CLOUD_WIFI_PW        "ew2021ap"
 #define CLOUD_WIFI_SECURITY  CY_WCM_SECURITY_WPA2_MIXED_PSK
-#define CLOUD_WIFI_BAND      CY_WCM_WIFI_BAND_2_4GHZ
+#define CLOUD_WIFI_BAND      CY_WCM_WIFI_BAND_ANY
 
-//#define CLOUD_MQTT_BROKER        "mqtt.eclipseprojects.io"
-//#define CLOUD_MQTT_BROKER        "test.mosquitto.org"
-#define CLOUD_MQTT_BROKER        "linux.elkhorn-creek.org"
+#define CLOUD_MQTT_BROKER        "mqtt.eclipseprojects.io"
 #define CLOUD_MQTT_CLIENT_PREFIX "arh_drone"
 #define CLOUD_MQTT_TOPIC         "arh_motor_speed"
 
 #define MOTOR_KEY "motor"
 
-
-/* This is the callback from the cy_JSON_parser function. It is called whenever
- * the parser finds a JSON object. */
-cy_rslt_t json_cb(cy_JSON_object_t *json_object, void *arg)
-{
-	int motorSpeed;
-
-	if(memcmp(json_object->object_string, MOTOR_KEY, json_object->object_string_length) == 0)
-	{
-		if(json_object->value_type == JSON_NUMBER_TYPE)
-		{
-			/* Add null termination to the value and then convert to a number */
-			char resultString[json_object->value_length + 1];
-			memcpy(resultString, json_object->value, json_object->value_length);
-			resultString[json_object->value_length] = 0;
-			motorSpeed = (uint8_t) atoi(resultString);
-			printf("Received speed value from cloud: %d\n", motorSpeed);
-			motor_update(motorSpeed);
-		}
-	}
-	return CY_RSLT_SUCCESS;
-}
-
-
-void cloud_subscribeMQTT()
-{
-
-	cy_rslt_t result;
-
-	cy_mqtt_subscribe_info_t    sub_msg[1];
-
-
-	    /* Subscribe to motor speed MQTT messages */
-    sub_msg[0].qos = 0;
-    sub_msg[0].topic = CLOUD_MQTT_TOPIC;
-    sub_msg[0].topic_len = strlen(sub_msg[0].topic);
-
-    result = cy_mqtt_subscribe( mqtthandle, sub_msg, 1 );
-	CY_ASSERT(result == CY_RSLT_SUCCESS);
-	printf("Subscribe Success\n");
-
-    /* Register JSON callback function */
-    cy_JSON_parser_register_callback(json_cb, NULL);
-
-}
 
 void cloud_task(void* param)
 {
@@ -153,7 +108,6 @@ static void cloud_connectWifi()
 	} while (result != CY_RSLT_SUCCESS);
 }
 
-
 static void cloud_startMQTT()
 {
 	static cy_mqtt_connect_info_t    	connect_info;
@@ -174,7 +128,7 @@ static void cloud_startMQTT()
 
 	CY_ASSERT(result == CY_RSLT_SUCCESS);
 
-	char clientId[32];
+	static char clientId[32];
 	srand(xTaskGetTickCount());
 	snprintf(clientId,sizeof(clientId),"%s%6d",CLOUD_MQTT_CLIENT_PREFIX,rand());
     memset( &connect_info, 0, sizeof( cy_mqtt_connect_info_t ) );
@@ -182,10 +136,33 @@ static void cloud_startMQTT()
     connect_info.client_id_len  = strlen(connect_info.client_id);
     connect_info.keep_alive_sec = 60;
     connect_info.will_info      = 0;
+	connect_info.clean_session = true;
+
 
     result = cy_mqtt_connect( mqtthandle, &connect_info );
 	CY_ASSERT(result == CY_RSLT_SUCCESS);
-	printf("MQTT Connect Success Client=%s\n",clientId);
+	printf("MQTT Connect Success to %s Client=%s\n",CLOUD_MQTT_BROKER,clientId);
+
+}
+
+static void cloud_subscribeMQTT()
+{
+
+	cy_rslt_t result;
+
+	cy_mqtt_subscribe_info_t    sub_msg[1];
+
+	/* Subscribe to motor speed MQTT messages */
+    sub_msg[0].qos = 0;
+    sub_msg[0].topic = CLOUD_MQTT_TOPIC;
+    sub_msg[0].topic_len = strlen(sub_msg[0].topic);
+
+    result = cy_mqtt_subscribe( mqtthandle, sub_msg, 1 );
+	CY_ASSERT(result == CY_RSLT_SUCCESS);
+	printf("Subscribe Success to Topic %s\n",CLOUD_MQTT_TOPIC);
+
+    /* Register JSON callback function */
+    cy_JSON_parser_register_callback(json_cb, NULL);
 
 }
 
@@ -223,3 +200,25 @@ static void cloud_mqtt_event_cb( cy_mqtt_t mqtt_handle, cy_mqtt_event_t event, v
     }
 }
 
+
+/* This is the callback from the cy_JSON_parser function. It is called whenever
+ * the parser finds a JSON object. */
+static cy_rslt_t json_cb(cy_JSON_object_t *json_object, void *arg)
+{
+	int motorSpeed;
+
+	if(memcmp(json_object->object_string, MOTOR_KEY, json_object->object_string_length) == 0)
+	{
+		if(json_object->value_type == JSON_NUMBER_TYPE)
+		{
+			/* Add null termination to the value and then convert to a number */
+			char resultString[json_object->value_length + 1];
+			memcpy(resultString, json_object->value, json_object->value_length);
+			resultString[json_object->value_length] = 0;
+			motorSpeed = (uint8_t) atoi(resultString);
+			printf("Received speed value from cloud: %d\n", motorSpeed);
+			motor_update(motorSpeed);
+		}
+	}
+	return CY_RSLT_SUCCESS;
+}

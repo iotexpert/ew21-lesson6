@@ -36,9 +36,9 @@ int main(void)
     // Stack size in WORDs
     // Idle task = priority 0
     xTaskCreate(blink_task,    "blink"     ,configMINIMAL_STACK_SIZE*1  ,0 /* args */ ,0 /* priority */, 0 /* handle */);
-    xTaskCreate(capsense_task, "CapSense"  ,configMINIMAL_STACK_SIZE*4  , NULL, (configMAX_PRIORITIES - 2), 0);
-    xTaskCreate(cloud_task,    "Cloud"     ,configMINIMAL_STACK_SIZE*8  , NULL, (configMAX_PRIORITIES - 1), 0);  
-    xTaskCreate(motor_task,    "Motor"     ,configMINIMAL_STACK_SIZE*8  , NULL, (configMAX_PRIORITIES - 3), 0);
+    xTaskCreate(capsense_task, "CapSense"  ,configMINIMAL_STACK_SIZE*4  , NULL, 1, 0);
+    xTaskCreate(cloud_task,    "Cloud"     ,configMINIMAL_STACK_SIZE*8  , NULL, 2, 0);  
+    xTaskCreate(motor_task,    "Motor"     ,configMINIMAL_STACK_SIZE*8  , NULL, 1, 0);
 
     vTaskStartScheduler();
 }
